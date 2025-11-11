@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>便利贴</title>
+		<style>
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+				background-image: linear-gradient(0deg, #eee 1px, transparent 0),
+					linear-gradient(90deg, #eee 1px, transparent 0);
+				background-size: 30px 30px;
+				color: #333;
+				min-height: 100dvh;
+				overflow: hidden;
+			}
+
+			body.is-mobile {
+				overflow-y: auto;
+			}
+
+			#board {
+				position: relative;
+				width: 100vw;
+				height: 100dvh;
+				overflow: hidden;
+			}
+
+			body.is-mobile #board {
+				height: auto;
+				min-height: 100dvh;
+			}
+
+			/* 便利贴样式优化 */
+			.card {
+				position: absolute;
+				width: 220px;
+				border-radius: 4px; /* 便利贴更扁平的圆角 */
+				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); /* 更自然的阴影 */
+				background: #fff;
+				border: none;
+				overflow: hidden;
+				opacity: 0;
+				transform-origin: center;
+				transition: transform 0.35s ease, opacity 0.35s ease, left 0.35s ease,
+					top 0.35s ease, width 0.35s ease, height 0.35s ease,
+					border-radius 0.35s ease;
+				/* 便利贴轻微褶皱效果 */
+				background-image: linear-gradient(135deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.05) 100%);
+			}
+
+			/* 便利贴顶部钉孔效果 */
+			.card::before {
+				content: '';
+				position: absolute;
+				top: 8px;
+				left: 50%;
+				transform: translateX(-50%);
+				width: 12px;
+				height: 12px;
+				border-radius: 50%;
+				background: rgba(150,150,150,0.3);
+				box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+			}
+
+			.card.dragging {
+				transition: none;
+				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+				transform: scale(1.02);
+			}
+
+			.card.maximized {
+				box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+				border-radius: 8px;
+			}
+
+			.card-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 20px 12px 10px; /* 顶部留出钉孔空间 */
+				background: transparent;
+				cursor: grab;
+				user-select: none;
+				touch-action: pan-y;
+			}
+
+			.card-header.dragging {
+				cursor: grabbing;
+			}
+
+			.window-controls {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+
+			.window-controls .control {
+				position: relative;
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+				border: 1px solid rgba(0, 0, 0, 0.08);
+				background: #ccc;
+				cursor: pointer;
+				outline: none;
+				padding: 0;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			.window-controls .control.close {
+				background: #ff5f57;
+				border-color: #e0443e;
+			}
+
+			.window-controls .control.minimize {
+				background: #febb2e;
+				border-color: #dea123;
+			}
+
+			.window-controls .control.maximize {
+				background: #28c840;
+				border-color: #1aab2c;
+			}
+
+			.window-controls .control::after {
+				content: '';
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				opacity: 0;
+				transition: opacity 0.2s ease;
+			}
+
+			.card-header:hover .window-controls .control::after {
+				opacity: 0.8;
+			}
+
+			.window-controls .control.close::after {
+				content: '×';
+				width: auto;
+				height: auto;
+				background: none;
+				font-size: 8px;
+				line-height: 1;
+				font-weight: 700;
+				color: rgba(0, 0, 0, 0.7);
+			}
+
+			.window-controls .control.minimize::after {
+				width: 5px;
+				height: 1px;
+				background: rgba(0, 0, 0, 0.6);
+			}
+
+			.window-controls .control.maximize::after {
+				width: 5px;
+				height: 5px;
+				background: linear-gradient(
+					45deg,
+					rgba(0, 0, 0, 0.6) 0%,
+					rgba(0, 0, 0, 0.6) 45%,
+					transparent 45%,
+					transparent 55%,
+					rgba(0, 0, 0, 0.6) 55%,
+					rgba(0, 0, 0, 0.6) 100%
+				);
+			}
+
+			.card-title {
+				font-size: 11px;
+				font-weight: 600;
+				color: rgba(0, 0, 0, 0.4);
+				padding-left: 10px;
+				flex: 1;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+
+			.card-body {
+				padding: 0 16px 16px;
+				font-size: 15px;
+				line-height: 1.5;
+				font-weight: 500;
+				color: rgba(0, 0, 0, 0.75);
+				min-height: 80px;
+				display: flex;
+				align-items: center;
+			}
+
+			/* 最大化状态下的内容样式 */
+			.card.maximized .card-body {
+				font-size: 24px;
+				padding: 40px;
+				min-height: calc(100vh - 80px);
+				text-align: center;
+			}
+
+			.card.maximized::before {
+				display: none; /* 最大化时隐藏钉孔 */
+			}
+
+			.card.maximized .card-header {
+				padding-top: 12px;
+			}
+
+			@media (max-width: 768px) {
+				.card {
+					width: 160px;
+					border-radius: 3px;
+				}
+
+				.card-body {
+					padding: 0 12px 12px;
+					font-size: 13px;
+				}
+
+				.card-title {
+					font-size: 10px;
+				}
+
+				.card.maximized .card-body {
+					font-size: 18px;
+					padding: 20px;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div id="board"></div>
+
+		<script>
+			const board = document.getElementById('board')
+			// 上班吐槽内容库
+			const messages = [
+				'周一为什么要上班啊😩',
+				'咖啡续命，一天三杯☕',
+				'这个需求又改了？🤯',
+				'什么时候才能下班啊',
+				'开会两小时，干活五分钟',
+				'好想摸鱼但不敢🐟',
+				'周末过得也太快了',
+				'今天也是困到睁不开眼💤',
+				'工资没涨，工作量翻倍',
+				'不想上班，想退休',
+				'这个bug到底在哪啊',
+				'又要加班，我的天😭',
+				'摸鱼使我快乐，工作使我疲惫',
+				'客户的要求越来越离谱',
+				'每天都在盼周五',
+				'再坚持一下，快下班了',
+				'为什么要开这么多无效会议',
+				'我的灵魂已经下班了',
+				'起床困难户，上班特困生',
+				'咖啡喝多了，晚上睡不着',
+				'上班如上坟，心情沉重',
+				'这个班是非上不可吗',
+				'好想请假休息一天',
+				'电脑卡了，人也卡了',
+				'工资条下来，心凉了半截',
+				'同事卷不动了，我也卷不动了',
+				'午休时间能不能长一点',
+				'上班的意义是什么',
+				'摸鱼时总感觉老板在身后',
+				'每天重复同样的工作',
+				'眼睛盯着屏幕，脑子一片空白',
+				'再熬几天就到周末了',
+				'为什么邮件永远回复不完',
+				'打印机又坏了！',
+				'午饭好难吃，还贵'
+			]
+
+			// 便利贴颜色库（更贴近真实便利贴）
+			const colors = [
+				'#fff9c4', // 浅黄色
+				'#ffe0e3', // 浅粉色
+				'#c7f0ff', // 浅蓝色
+				'#d9f2d9', // 浅绿色
+				'#e5d7ff', // 浅紫色
+				'#ffd8a8', // 浅橙色
+				'#f9f7d9', // 米黄色
+				'#d2f0f8', // 淡青色
+				'#ffd4f5', // 淡粉色
+				'#e8f5e9', // 嫩绿色
+				'#f0e6ff', // 淡紫色
+				'#fff0e0'  // 浅橙色
+			]
+
+			const cardStates = new WeakMap()
+			const MAXIMIZED_LAYER = 1000000
+			let activeMaximizedCard = null
+			let isMobile =
+				window.matchMedia('(pointer: coarse)').matches ||
+				window.innerWidth <= 768
+			const maxCards = isMobile ? 120 : 180
+			const initialCardCount = isMobile ? 18 : 30
+			const spawnInterval = isMobile ? 700 : 400
+			let zIndexCursor = 200
+
+			document.body.classList.toggle('is-mobile', isMobile)
+
+			function randomFrom(array) {
+				return array[Math.floor(Math.random() * array.length)]
+			}
+
+			function clamp(value, min, max) {
+				return Math.min(Math.max(value, min), max)
+			}
+
+			function applyTransform(card, state) {
+				const scale = state.scale ?? 1
+				const translateX = state.translateX ?? 0
+				const translateY = state.translateY ?? 0
+				const angle = state.angle ?? 0
+				card.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${angle}deg)`
+			}
+
+			function bringToFront(card) {
+				if (card === activeMaximizedCard) {
+					card.style.zIndex = MAXIMIZED_LAYER
+					return
+				}
+
+				zIndexCursor += 1
+				if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER) {
+					zIndexCursor = MAXIMIZED_LAYER - 1
+				}
+
+				card.style.zIndex = zIndexCursor
+			}
+
+			function setupCardInteractions(card) {
+				const header = card.querySelector('.card-header')
+				const closeBtn = card.querySelector('.control.close')
+				const minimizeBtn = card.querySelector('.control.minimize')
+				const maximizeBtn = card.querySelector('.control.maximize')
+
+				closeBtn.addEventListener('click', event => {
+					event.stopPropagation()
+					closeCard(card)
+				})
+
+				minimizeBtn.addEventListener('click', event => {
+					event.stopPropagation()
+					minimizeCard(card)
+				})
+
+				maximizeBtn.addEventListener('click', event => {
+					event.stopPropagation()
+					toggleMaximize(card)
+				})
+
+				header.addEventListener('pointerdown', event => {
+					if (event.pointerType === 'touch') return
+					startDrag(event, card)
+				})
+
+				card.addEventListener('pointerdown', () => {
+					bringToFront(card)
+				})
+
+				header.addEventListener('dblclick', event => {
+					if (!event.target.closest('.control')) {
+						toggleMaximize(card)
+					}
+				})
+			}
+
+			function closeCard(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+				if (card === activeMaximizedCard) {
+					activeMaximizedCard = null
+				}
+				state.closing = true
+				state.scale = 0.1
+				card.style.opacity = '0'
+				applyTransform(card, state)
+
+				const handleTransitionEnd = event => {
+					if (event.propertyName === 'opacity') {
+						card.removeEventListener('transitionend', handleTransitionEnd)
+						card.remove()
+					}
+				}
+
+				card.addEventListener('transitionend', handleTransitionEnd)
+			}
+
+			function minimizeCard(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+
+				const runMinimize = () => {
+					state.closing = true
+					bringToFront(card)
+					const bottom = Math.max(window.innerHeight - 24, 0)
+					const targetLeft = clamp(
+						state.left,
+						16,
+						Math.max(window.innerWidth - card.offsetWidth - 16, 16)
+					)
+
+					state.left = targetLeft
+					state.top = bottom
+					state.scale = 0.1
+					state.angle = 0
+					card.style.left = `${targetLeft}px`
+					card.style.top = `${bottom}px`
+					card.style.opacity = '0.35'
+					applyTransform(card, state)
+
+					const handleTransitionEnd = event => {
+						if (event.propertyName === 'transform') {
+							card.removeEventListener('transitionend', handleTransitionEnd)
+							card.remove()
+						}
+					}
+
+					card.addEventListener('transitionend', handleTransitionEnd)
+				}
+
+				if (state.maximized) {
+					activeMaximizedCard = null
+					state.maximized = false
+					card.classList.remove('maximized')
+					card.style.borderRadius = '4px'
+					state.left = 0
+					state.top = 0
+					state.scale = 1
+					state.angle = 0
+					applyTransform(card, state)
+
+					requestAnimationFrame(() => {
+						requestAnimationFrame(runMinimize)
+					})
+					return
+				}
+
+				runMinimize()
+			}
+
+			function toggleMaximize(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+
+				if (state.maximized) {
+					restoreFromMaximize(card, state)
+				} else {
+					maximizeCard(card, state)
+				}
+			}
+
+			function maximizeCard(card, state) {
+				if (activeMaximizedCard) {
+					restoreFromMaximize(activeMaximizedCard, cardStates.get(activeMaximizedCard))
+				}
+
+				state.beforeMaximize = {
+					left: state.left,
+					top: state.top,
+					scale: state.scale ?? 1,
+					width: card.offsetWidth,
+					height: card.offsetHeight,
+					angle: state.angle ?? 0
+				}
+
+				state.maximized = true
+				activeMaximizedCard = card
+				card.classList.add('maximized')
+				card.style.width = '100vw'
+				card.style.height = '100vh'
+				card.style.left = '0'
+				card.style.top = '0'
+				card.style.zIndex = MAXIMIZED_LAYER
+				
+				state.angle = 0
+				state.scale = 1
+				state.translateX = 0
+				state.translateY = 0
+				
+				applyTransform(card, state)
+			}
+
+			function restoreFromMaximize(card, state) {
+				if (!state.beforeMaximize) return
+
+				state.maximized = false
+				activeMaximizedCard = null
+				card.classList.remove('maximized')
+				
+				card.style.width = `${state.beforeMaximize.width}px`
+				card.style.height = `${state.beforeMaximize.height}px`
+				card.style.left = `${state.beforeMaximize.left}px`
+				card.style.top = `${state.beforeMaximize.top}px`
+				
+				state.scale = state.beforeMaximize.scale
+				state.angle = state.beforeMaximize.angle
+				state.beforeMaximize = null
+				
+				applyTransform(card, state)
+				bringToFront(card)
+			}
+
+			function startDrag(event, card) {
+				const state = cardStates.get(card)
+				if (!state || state.maximized || state.closing) return
+
+				event.preventDefault()
+				const header = card.querySelector('.card-header')
+				header.classList.add('dragging')
+				card.classList.add('dragging')
+				
+				const startX = event.clientX
+				const startY = event.clientY
+				const initialLeft = state.left
+				const initialTop = state.top
+
+				const handleMouseMove = (moveEvent) => {
+					const dx = moveEvent.clientX - startX
+					const dy = moveEvent.clientY - startY
+					
+					state.left = initialLeft + dx
+					state.top = initialTop + dy
+					
+					card.style.left = `${state.left}px`
+					card.style.top = `${state.top}px`
+				}
+
+				const handleMouseUp = () => {
+					header.classList.remove('dragging')
+					card.classList.remove('dragging')
+					document.removeEventListener('mousemove', handleMouseMove)
+					document.removeEventListener('mouseup', handleMouseUp)
+				}
+
+				document.addEventListener('mousemove', handleMouseMove)
+				document.addEventListener('mouseup', handleMouseUp)
+				bringToFront(card)
+			}
+
+			function createCard() {
+				if (board.children.length >= maxCards) return
+
+				const card = document.createElement('div')
+				card.className = 'card'
+				
+				// 设置随机颜色
+				const color = randomFrom(colors)
+				card.style.backgroundColor = color
+				
+				// 随机位置
+				const left = Math.random() * (window.innerWidth - 240)
+				const top = Math.random() * (window.innerHeight - 200)
+				
+				// 随机角度
+				const angle = (Math.random() - 0.5) * 8
+				
+				card.style.left = `${left}px`
+				card.style.top = `${top}px`
+				
+				// 随机内容
+				const message = randomFrom(messages)
+				
+				card.innerHTML = `
+					<div class="card-header">
+						<div class="card-title">吐槽便利贴</div>
+						<div class="window-controls">
+							<button class="control close" aria-label="关闭"></button>
+							<button class="control minimize" aria-label="最小化"></button>
+							<button class="control maximize" aria-label="最大化"></button>
+						</div>
+					</div>
+					<div class="card-body">${message}</div>
+				`
+				
+				board.appendChild(card)
+				
+				// 存储卡片状态
+				cardStates.set(card, {
+					left,
+					top,
+					angle,
+					maximized: false,
+					closing: false
+				})
+				
+				// 设置初始动画
+				applyTransform(card, {
+					...cardStates.get(card),
+					scale: 0.5
+				})
+				
+				// 触发动画
+				setTimeout(() => {
+					card.style.opacity = '1'
+					applyTransform(card, cardStates.get(card))
+				}, 10)
+				
+				// 设置交互
+				setupCardInteractions(card)
+				
+				// 设置z-index
+				bringToFront(card)
+			}
+
+			// 初始化创建便利贴
+			function initCards() {
+				for (let i = 0; i < initialCardCount; i++) {
+					setTimeout(createCard, i * spawnInterval / 3)
+				}
+
+				// 定时添加新卡片
+				setInterval(createCard, spawnInterval)
+			}
+
+			// 启动应用
+			initCards()
+		</script>
+	</body>
+</html>
